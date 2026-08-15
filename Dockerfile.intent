@@ -1,0 +1,6 @@
+FROM openviking-openvino-base:2026.3
+WORKDIR /srv/openviking-openvino
+COPY intent_config.py /srv/openviking-openvino/intent_config.py
+COPY intent_main.py /srv/openviking-openvino/main.py
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
