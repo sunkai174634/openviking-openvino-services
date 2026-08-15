@@ -1,0 +1,12 @@
+openviking-openvino-services/
+├── app/
+│   ├── embedding/
+│   └── intent/
+├── configs/
+├── docker/
+├── docs/
+├── Dockerfile
+├── Dockerfile.embedding
+├── Dockerfile.intent
+├── docker-compose.yml
+└── README.md
