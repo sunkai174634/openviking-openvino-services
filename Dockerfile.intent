@@ -1,0 +1,9 @@
+FROM openviking-openvino-base:2026.3
+WORKDIR /srv/openviking-openvino
+COPY app/intent/__init__.py /srv/openviking-openvino/intent/__init__.py
+COPY app/intent/config.py /srv/openviking-openvino/intent/config.py
+COPY app/intent/engine.py /srv/openviking-openvino/intent/engine.py
+COPY app/intent/main.py /srv/openviking-openvino/intent/main.py
+COPY ov_intent_analysis_sft_v7.yaml /srv/openviking-openvino/intent/ov_intent_analysis_sft_v7.yaml
+EXPOSE 8000
+CMD ["uvicorn", "intent.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,48 @@
+services:
+  embedding:
+    image: openviking-openvino-embedding:0.2.0-lanes
+    container_name: openviking-openvino-embedding-exp
+    restart: unless-stopped
+    environment:
+      MODEL_ID: qwen3-embedding-0.6b-openvino-int8
+      MODEL_DIR: /models/OpenVINO/Qwen3-Embedding-0.6B-int8-ov
+      OPENVINO_DEVICE: GPU
+      MAX_INPUT_TOKENS: '3584'
+      MAX_QUEUE_SIZE: '64'
+      QUEUE_TIMEOUT_SECONDS: '10'
+      LONG_QUEUE_TIMEOUT_SECONDS: '120'
+      REQUEST_TIMEOUT_SECONDS: '60'
+      LONG_REQUEST_TOKENS: '2048'
+      SHORT_REQUEST_TOKENS: '256'
+    ports:
+      - '33038:8000'
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - '44'
+      - '992'
+    volumes:
+      - /path/to/your/models/Qwen3-Embedding-0.6B-int8-ov:/models/OpenVINO/Qwen3-Embedding-0.6B-int8-ov:ro
+
+  intent:
+    image: openviking-openvino-intent:edge-preserve-budget-20260816
+    container_name: openviking-openvino-intent-exp
+    restart: 'no'
+    environment:
+      MODEL_ID: guoxuter/ov_intent_analysis_sft:v7_q8
+      MODEL_DIR: /models/OpenVINO/ov_intent_analysis_sft_int8_ov
+      OPENVINO_DEVICE: GPU
+      OPENVINO_CACHE_DIR: /tmp/openviking-openvino-cache
+      MAX_INPUT_TOKENS: '4096'
+      MAX_NEW_TOKENS: '512'
+      TEMPERATURE: '0.1'
+    ports:
+      - '33039:8000'
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - '44'
+      - '992'
+    volumes:
+      - /path/to/your/models/ov_intent_analysis_sft_int8_ov:/models/OpenVINO/ov_intent_analysis_sft_int8_ov:ro
+      - /path/to/your/openvino-cache:/tmp/openviking-openvino-cache
