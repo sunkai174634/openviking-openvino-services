@@ -9,7 +9,7 @@ import openvino as ov
 from fastapi import FastAPI, HTTPException
 from transformers import AutoTokenizer
 
-from ..logging_config import current_request_id, get_logger, install_request_logging, redact
+from logging_config import current_request_id, get_logger, install_request_logging, redact
 from .config import (
     MODEL_ID,
     MODEL_DIR,
@@ -24,7 +24,7 @@ from .config import (
 )
 
 logger = get_logger('embedding')
-app = FastAPI(title='OpenViking OpenVINO Embedding Sidecar', version='0.2.0')
+app = FastAPI(title='OpenViking OpenVINO Embedding Sidecar', version='0.3.0')
 install_request_logging(app, 'embedding')
 engine = None
 started_at = time.time()

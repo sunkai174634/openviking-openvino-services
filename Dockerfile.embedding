@@ -1,5 +1,6 @@
 FROM openviking-openvino-base:2026.3
 WORKDIR /srv/openviking-openvino
+COPY app/logging_config.py /srv/openviking-openvino/logging_config.py
 COPY app/embedding/__init__.py /srv/openviking-openvino/embedding/__init__.py
 COPY app/embedding/config.py /srv/openviking-openvino/embedding/config.py
 COPY app/embedding/main.py /srv/openviking-openvino/embedding/main.py

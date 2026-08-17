@@ -6,12 +6,12 @@ from typing import List, Optional, Union
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from ..logging_config import current_request_id, get_logger, install_request_logging
+from logging_config import current_request_id, get_logger, install_request_logging
 from .config import MODEL_ID
 from .engine import IntentEngine
 
 logger = get_logger('intent')
-app = FastAPI(title='OpenViking OpenVINO Intent Sidecar', version='0.3.0')
+app = FastAPI(title='OpenViking OpenVINO Intent Sidecar', version='0.4.0')
 install_request_logging(app, 'intent')
 engine = None
 started_at = time.time()

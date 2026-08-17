@@ -1,5 +1,6 @@
 FROM openviking-openvino-base:2026.3
 WORKDIR /srv/openviking-openvino
+COPY app/logging_config.py /srv/openviking-openvino/logging_config.py
 COPY app/intent/__init__.py /srv/openviking-openvino/intent/__init__.py
 COPY app/intent/config.py /srv/openviking-openvino/intent/config.py
 COPY app/intent/engine.py /srv/openviking-openvino/intent/engine.py

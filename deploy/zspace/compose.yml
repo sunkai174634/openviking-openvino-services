@@ -1,6 +1,6 @@
 services:
   embedding:
-    image: openviking-openvino-embedding:0.2.0-lanes
+    image: openviking-openvino-embedding:0.3.0
     container_name: openviking-openvino-embedding-exp
     restart: unless-stopped
     environment:
@@ -25,9 +25,9 @@ services:
       - /path/to/your/models/Qwen3-Embedding-0.6B-int8-ov:/models/OpenVINO/Qwen3-Embedding-0.6B-int8-ov:ro
 
   intent:
-    image: openviking-openvino-intent:edge-preserve-budget-20260816
+    image: openviking-openvino-intent:0.4.0
     container_name: openviking-openvino-intent-exp
-    restart: 'no'
+    restart: unless-stopped
     environment:
       MODEL_ID: guoxuter/ov_intent_analysis_sft:v7_q8
       MODEL_DIR: /models/OpenVINO/ov_intent_analysis_sft_int8_ov

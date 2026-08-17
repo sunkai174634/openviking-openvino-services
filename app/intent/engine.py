@@ -13,7 +13,7 @@ from jinja2 import Template
 from optimum.intel import OVModelForVisualCausalLM
 from transformers import AutoTokenizer
 
-from ..logging_config import current_request_id, get_logger
+from logging_config import current_request_id, get_logger
 from .config import MODEL_DIR, OPENVINO_DEVICE, MAX_INPUT_TOKENS, MAX_NEW_TOKENS, TEMPERATURE
 
 logger = get_logger('intent.engine')
