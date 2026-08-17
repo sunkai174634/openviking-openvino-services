@@ -39,6 +39,12 @@ tr:hover td{background:#141927}
 .rid{color:#e5c07b;cursor:pointer}
 .rid:hover{text-decoration:underline}
 .detail{color:var(--dim);max-width:520px}
+.hl-warn{color:var(--warn);font-weight:700}
+.hl-err{color:var(--err);font-weight:700}
+tr.row-warn td{background:rgba(229,182,84,.07)}
+tr.row-err td{background:rgba(224,108,108,.10)}
+tr.row-warn:hover td{background:rgba(229,182,84,.14)}
+tr.row-err:hover td{background:rgba(224,108,108,.18)}
 .footer{color:var(--dim);font-size:12px;padding:8px 20px}
 .badge{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:2px 10px;font-size:12px;color:var(--dim)}
 .empty{color:var(--dim);text-align:center;padding:60px 0}
@@ -62,6 +68,7 @@ tr:hover td{background:#141927}
   <select id="fEvent"><option value="">全部事件</option></select>
   <input id="fRid" class="q" style="max-width:220px" placeholder="Request ID（点日志里的黄字可填入）">
   <input id="fQ" class="q" placeholder="关键词：路径 / 耗时 / truncated / 任意字段…">
+  <label class="auto" title="只显示高耗时/截断/超时警告/告警/错误的行"><input type="checkbox" id="onlyAnom">只看异常</label>
   <label class="auto"><input type="checkbox" id="autoRefresh" checked>自动刷新 5s</label>
   <button id="btnClear" onclick="filtersReset()" style="background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:6px;padding:6px 12px;cursor:pointer">重置</button>
 </div>
@@ -92,15 +99,41 @@ async function fetchLogs(){
   if(!r.ok)throw new Error(r.status);
   return r.json();
 }
-function fmtDetail(e){
+function fmtDetail(e){return fmtDetailParts(e).map(p=>p.text).join(' ')}
+const TH={
+  infer_ms:{warn:500,err:2000},      // 单次推理
+  request_ms:{warn:1000,err:5000},   // 整请求（intent 正常 5-12s，容忍）
+  generate_ms:{warn:8000,err:20000}, // intent 生成
+  queue_wait_ms:{warn:200,err:1000}, // 排队
+};
+function fmtDetailParts(e){
   const skip=new Set(['ts','level','logger','event','request_id']);
   const parts=[];
   for(const[k,v]of Object.entries(e)){
     if(skip.has(k))continue;
-    if(k==='exc'){parts.push('exc='+String(v).split('\n').slice(0,2).join(' ⏎ '));continue}
-    parts.push(k+'='+(typeof v==='object'?JSON.stringify(v):v));
+    if(k==='exc'){parts.push({text:'exc='+String(v).split('\n').slice(0,2).join(' ⏎ '),cls:'hl-err'});continue}
+    let cls='';
+    const t=TH[k];
+    if(t&&typeof v==='number'){
+      if(v>=t.err)cls='hl-err';else if(v>=t.warn)cls='hl-warn';
+    }
+    if((k.endsWith('_truncated')||k==='input_truncated')&&v===true)cls='hl-warn';
+    if(k==='queue_timeouts'&&v>0)cls='hl-warn';
+    parts.push({text:k+'='+(typeof v==='object'?JSON.stringify(v):v),cls});
   }
-  return parts.join(' ');
+  return parts;
+}
+function anomaly(e){
+  if(e.level==='ERROR')return 'err';
+  if(e.level==='WARNING')return 'warn';
+  if(e.input_truncated===true||e.prompt_truncated===true||e.output_truncated===true)return 'warn';
+  if(e.queue_timeouts>0)return 'warn';
+  for(const[k,t]of Object.entries(TH)){
+    const v=e[k];
+    if(typeof v==='number'&&v>=t.err)return 'err';
+    if(typeof v==='number'&&v>=t.warn)return 'warn';
+  }
+  return '';
 }
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML}
 function render(d){
@@ -112,16 +145,20 @@ function render(d){
   const sel=$('fEvent'),cur=sel.value;
   sel.innerHTML='<option value="">全部事件</option>'+[...events].sort().map(x=>`<option${x===cur?' selected':''}>${esc(x)}</option>`).join('');
   const tb=$('rows');
-  tb.innerHTML=d.entries.map(e=>`<tr>
+  let entries=d.entries;
+  if($('onlyAnom').checked)entries=entries.filter(e=>anomaly(e));
+  tb.innerHTML=entries.map(e=>{
+    const a=anomaly(e);
+    return `<tr${a?` class="row-${a}"`:''}>
     <td class="ts">${esc((e.ts||'').replace('T',' ').slice(0,23))}</td>
     <td class="lv ${esc(e.level)}">${esc(e.level)}</td>
     <td class="svc"><span class="${SERVICES[svc].cls}">●</span> ${SERVICES[svc].name}</td>
     <td class="evt">${esc(e.event)}</td>
     <td class="rid" title="点击筛选此请求" onclick="byRid('${esc(e.request_id)}')">${esc(e.request_id||'')}</td>
-    <td class="detail">${esc(fmtDetail(e))}</td>
-  </tr>`).join('');
-  $('empty').hidden=d.entries.length>0;
-  $('foot').textContent='更新于 '+new Date().toLocaleTimeString('zh-CN')+' · 端点 '+SERVICES[svc].url+'/v1/logs';
+    <td class="detail">${fmtDetailParts(e).map(p=>p.cls?`<span class="${p.cls}">${esc(p.text)}</span>`:esc(p.text)).join(' ')}</td>
+  </tr>`}).join('');
+  $('empty').hidden=entries.length>0;
+  $('foot').textContent='更新于 '+new Date().toLocaleTimeString('zh-CN')+' · 端点 '+SERVICES[svc].url+'/v1/logs'+($('onlyAnom').checked?' · 只看异常 '+entries.length+' 条':'');
 }
 async function refresh(){
   try{render(await fetchLogs())}catch(err){
@@ -139,6 +176,7 @@ document.getElementById('tabs').addEventListener('click',e=>{
   refresh();
 });
 ['fLevel','fEvent'].forEach(i=>$(i).addEventListener('change',refresh));
+$('onlyAnom').addEventListener('change',refresh);
 ['fRid','fQ'].forEach(i=>$(i).addEventListener('input',()=>{clearTimeout(i._t);i._t=setTimeout(refresh,400)}));
 setInterval(()=>{if($('autoRefresh').checked)refresh()},5000);
 refresh();
