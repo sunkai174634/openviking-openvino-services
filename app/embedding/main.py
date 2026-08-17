@@ -15,6 +15,7 @@ from logging_config import (
     install_request_logging,
     recent_logs,
     redact,
+    vec_digest,
 )
 from version import __version__
 from .config import (
@@ -361,6 +362,7 @@ class Embedder:
                 'input_truncated': truncated,
                 'input_chars': raw_tokens,
                 'input_preview': redact(texts[0]),
+                'result_digest': vec_digest(emb[0]) if emb else None,
             }
             if truncated:
                 logger.warning('input_truncated', extra=log_extra)

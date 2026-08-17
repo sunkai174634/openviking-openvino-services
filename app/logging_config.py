@@ -163,6 +163,28 @@ def recent_logs(limit=200, level=None, event=None, request_id=None, q=None) -> l
     return _ring_handler.query(limit=limit, level=level, event=event, request_id=request_id, q=q)
 
 
+def vec_digest(vec):
+    """Compact fingerprint of an embedding vector for logs: dim + L2 norm + short hash.
+
+    Full float vectors never enter logs (size + noise); the digest is deterministic
+    for identical inputs, which is enough to verify reproducibility across runs.
+    """
+    import hashlib
+
+    try:
+        import numpy as np
+    except ImportError:  # pragma: no cover - numpy is always present in service images
+        return None
+    if vec is None:
+        return None
+    flat = np.asarray(vec, dtype=np.float32).reshape(-1)
+    return {
+        'dim': int(flat.shape[0]),
+        'norm': round(float(np.linalg.norm(flat)), 4),
+        'sha8': hashlib.sha256(flat.tobytes()).hexdigest()[:8],
+    }
+
+
 def redact(text, limit: int = 120):
     """Flatten and cap a string for logging; never leak full prompts into logs."""
     if not isinstance(text, str):

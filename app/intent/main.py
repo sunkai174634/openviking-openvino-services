@@ -6,7 +6,13 @@ from typing import List, Optional, Union
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from logging_config import current_request_id, get_logger, install_request_logging, recent_logs
+from logging_config import (
+    current_request_id,
+    get_logger,
+    install_request_logging,
+    recent_logs,
+    redact,
+)
 from version import __version__
 from .config import MODEL_ID
 from .engine import IntentEngine
@@ -132,6 +138,7 @@ def intent(req: IntentRequest):
             'prompt_truncated': bool(meta.get('prompt_truncated')),
             'output_truncated': bool(meta.get('truncated')),
             'queries': len(plan.get('queries', [])),
+            'plan_preview': redact(json.dumps(plan, ensure_ascii=False), 400),
         },
     )
     return {'object': 'intent', 'model': MODEL_ID, 'plan': plan, 'meta': meta, 'truncated': bool(meta.get('truncated'))}
