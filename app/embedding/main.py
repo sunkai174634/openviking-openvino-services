@@ -9,7 +9,14 @@ import openvino as ov
 from fastapi import FastAPI, HTTPException
 from transformers import AutoTokenizer
 
-from logging_config import current_request_id, get_logger, install_request_logging, redact
+from logging_config import (
+    current_request_id,
+    get_logger,
+    install_request_logging,
+    recent_logs,
+    redact,
+)
+from version import __version__
 from .config import (
     MODEL_ID,
     MODEL_DIR,
@@ -24,7 +31,7 @@ from .config import (
 )
 
 logger = get_logger('embedding')
-app = FastAPI(title='OpenViking OpenVINO Embedding Sidecar', version='0.3.0')
+app = FastAPI(title='OpenViking OpenVINO Embedding Service', version=__version__)
 install_request_logging(app, 'embedding')
 engine = None
 started_at = time.time()
@@ -187,6 +194,7 @@ class Embedder:
     # ---- worker (single owner of the InferRequest) ----
 
     def worker_loop(self):
+        logger.info('infer_worker_started')
         while True:
             with self.sched_cond:
                 while not self.fast_lane and not self.slow_lane:
@@ -209,6 +217,7 @@ class Embedder:
                 work.error = None
             except Exception as exc:  # noqa: BLE001
                 work.error = exc
+                logger.exception('infer_worker_error', extra={'lane': work.lane, 'error': str(exc)})
             finally:
                 with self.stats_lock:
                     self.active_infer = max(0, self.active_infer - 1)
@@ -308,6 +317,10 @@ class Embedder:
                 )
                 raise EmbeddingQueueTimeoutError(f'{lane} lane wait timed out after {timeout}s')
             if work.error is not None:
+                logger.error(
+                    'infer_failed',
+                    extra={'request_id': current_request_id(), 'lane': lane, 'error': str(work.error), 'prompt_tokens': prompt_tokens},
+                )
                 raise work.error
             emb = work.emb
             self._note_queue_wait(queue_wait_ms)
@@ -389,7 +402,14 @@ def health():
 
 @app.get('/v1/models')
 def models():
-    return {'object': 'list', 'data': [{'id': MODEL_DIR, 'object': 'model', 'created': 0, 'owned_by': 'baymax'}]}
+    return {'object': 'list', 'data': [{'id': MODEL_DIR, 'object': 'model', 'created': 0, 'owned_by': 'openviking-openvino-services'}]}
+
+
+@app.get('/v1/logs')
+def logs(limit: int = 200, level: str | None = None, event: str | None = None,
+         request_id: str | None = None, q: str | None = None):
+    """Structured log tail with filtering (newest first)."""
+    return {'service': 'embedding', 'version': __version__, 'total': len(recent_logs(limit=100000)), 'entries': recent_logs(limit=limit, level=level, event=event, request_id=request_id, q=q)}
 
 
 @app.post('/v1/embeddings')

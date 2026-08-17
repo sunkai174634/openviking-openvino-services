@@ -6,12 +6,13 @@ from typing import List, Optional, Union
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from logging_config import current_request_id, get_logger, install_request_logging
+from logging_config import current_request_id, get_logger, install_request_logging, recent_logs
+from version import __version__
 from .config import MODEL_ID
 from .engine import IntentEngine
 
 logger = get_logger('intent')
-app = FastAPI(title='OpenViking OpenVINO Intent Sidecar', version='0.4.0')
+app = FastAPI(title='OpenViking OpenVINO Intent Service', version=__version__)
 install_request_logging(app, 'intent')
 engine = None
 started_at = time.time()
@@ -94,6 +95,13 @@ def _messages_to_prompt(messages: List[ChatMessage]) -> str:
 
 def _json_text(plan: dict) -> str:
     return json.dumps({'queries': plan.get('queries', [])}, ensure_ascii=False)
+
+
+@app.get('/v1/logs')
+def logs(limit: int = 200, level: str | None = None, event: str | None = None,
+         request_id: str | None = None, q: str | None = None):
+    """Structured log tail with filtering (newest first)."""
+    return {'service': 'intent', 'version': __version__, 'total': len(recent_logs(limit=100000)), 'entries': recent_logs(limit=limit, level=level, event=event, request_id=request_id, q=q)}
 
 
 @app.post('/v1/intent')

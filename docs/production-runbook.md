@@ -6,10 +6,11 @@
 
 ```text
 OpenViking 实例 (端口 33031)
-├── embedding 路由 ──► sidecar :33038  image openviking-openvino-embedding:0.2.0-lanes
-└── query_planner ──► sidecar :33039  image openviking-openvino-intent:edge-preserve-budget-20260816
+├── embedding 路由 ──► sidecar :33038  image openviking-openvino-embedding:1.0.0
+└── query_planner ──► sidecar :33039  image openviking-openvino-intent:1.0.0
 
 ZSpace 部署根: <你的 NAS Docker 应用根>/openviking-openvino-services/
+日志台: http://<NAS>:33050/ (nginx 同源反代 /emb /int，纯静态 dashboard/)
 模型挂载:
   embedding: <模型根>/Qwen3-Embedding-0.6B-int8-ov
   intent:    <模型根>/ov_intent_analysis_sft_int8_ov (+可写 OpenVINO cache)

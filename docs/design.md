@@ -61,6 +61,13 @@ embedding 侧在 tokenize 后重数一次 token（与 MAX_INPUT_TOKENS 比较）
 
 理由：截断不可见时，故障表现为"模型输出质量下降"，会误导去怀疑模型/量化，而真实原因只是预算不够。诊断规则：**JSON parse 失败且 generated_tokens == MAX_NEW_TOKENS → 先加输出预算**。
 
+## 5c. 日志查询接口与中文日志台（1.0.0 起）
+
+- 每个服务暴露 `GET /v1/logs`：`limit/level/event/request_id/q`（关键词）过滤，newest-first，数据源为进程内 ring buffer（`LOG_BUFFER_SIZE` 默认 2000 条，重启即清——持久化仍以 docker logs 为准）
+- `dashboard/` 为纯静态中文日志台（无构建步骤、无依赖）：服务切换、级别/事件/RequestID/关键词筛选、5s 自动刷新；点日志中的 Request ID 即可按该请求过滤
+- 部署形态：nginx:alpine 容器（33050）同源反代 33038/33039（`/emb`、`/int`），规避浏览器 CORS，仓库内 dashboard 用相对路径不含任何内网 IP
+- 版本规范：`app/version.py` 单一来源（semver），两服务与日志接口统一汇报；发版流程 = 改 version.py → tag `vX.Y.Z` → 同 tag 构建镜像
+
 ## 6. 镜像结构：共享 base + 二级薄服务镜像
 
 ```text
