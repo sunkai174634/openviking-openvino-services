@@ -88,14 +88,16 @@ OpenViking 层 `embedding.max_input_tokens=2048` 是语义策略（多少源文�
 ## 快速开始
 
 ```bash
-# 1. 准备模型（NAS 上）
-#    embedding: Qwen3-Embedding-0.6B OpenVINO INT8 IR
-#    intent:    ov_intent_analysis_sft v7 OpenVINO INT8 IR
+# 0. 模型已内置于本仓库 models/ 目录（Git LFS 管理）：
+#    git lfs install && git clone https://github.com/sunkai174634/openviking-openvino-services
+# 1. 模型目录：
+#    embedding: models/Qwen3-Embedding-0.6B-int8-ov
+#    intent:    models/hf-v7-intent-analysis-sft-openvino-int8
 # 2. 构建镜像（Mac/任何 amd64 构建机）
 docker buildx build --platform linux/amd64 --load -t openviking-openvino-base:2026.3 .
 docker buildx build --platform linux/amd64 --load -f Dockerfile.embedding -t openviking-openvino-embedding:2026.3 .
 docker buildx build --platform linux/amd64 --load -f Dockerfile.intent -t openviking-openvino-intent:2026.3 .
-# 3. 部署（按 deploy/zspace/compose.yml 模板，替换你的模型路径）
+# 3. 部署（按 deploy/zspace/compose.yml 模板，把 /path/to/your/models 指向仓库 models/ 下对应目录）
 # 4. 验证
 ./deploy/zspace/smoke.sh
 ```
