@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from logging_config import (
+    buffered_log_count,
     current_request_id,
     get_logger,
     install_request_logging,
@@ -107,7 +108,7 @@ def _json_text(plan: dict) -> str:
 def logs(limit: int = 200, level: str | None = None, event: str | None = None,
          request_id: str | None = None, q: str | None = None):
     """Structured log tail with filtering (newest first)."""
-    return {'service': 'intent', 'version': __version__, 'total': len(recent_logs(limit=100000)), 'entries': recent_logs(limit=limit, level=level, event=event, request_id=request_id, q=q)}
+    return {'service': 'intent', 'version': __version__, 'buffer_total': buffered_log_count(), 'entries': recent_logs(limit=limit, level=level, event=event, request_id=request_id, q=q)}
 
 
 @app.post('/v1/intent')

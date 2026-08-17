@@ -80,7 +80,10 @@ class IntentEngine:
 
     def _truncate_prompt_preserving_edges(self, prompt: str) -> tuple[str, dict[str, Any]]:
         prompt = prompt.strip()
-        before_tokens = self._token_count(prompt)
+        # single encode, reused for both the count and the slicing below
+        # (the over-budget path previously encoded the full prompt twice)
+        tokens = self.tokenizer.encode(prompt, add_special_tokens=False)
+        before_tokens = len(tokens)
         meta = {
             'prompt_budget_tokens': self.prompt_budget_tokens,
             'prompt_tokens_before': before_tokens,
@@ -90,7 +93,6 @@ class IntentEngine:
         if before_tokens <= self.prompt_budget_tokens:
             return prompt, meta
 
-        tokens = self.tokenizer.encode(prompt, add_special_tokens=False)
         head_keep = max(256, self.prompt_budget_tokens // 4)
         tail_keep = max(self.prompt_budget_tokens - head_keep, 0)
         if head_keep > self.prompt_budget_tokens:
@@ -262,12 +264,17 @@ class IntentEngine:
             context_type=context_type,
             target_abstract=target_abstract,
         )
+        # Same input budget as complete_prompt: /v1/intent previously sent
+        # unbounded prompts to the iGPU (hard OOM boundary ~4.4k tokens on N150),
+        # and prompt_truncated was always False because budget_meta was never merged.
+        budgeted_prompt, budget_meta = self._truncate_prompt_preserving_edges(prompt)
         chat_text = self.tokenizer.apply_chat_template(
-            [{'role': 'user', 'content': prompt}],
+            [{'role': 'user', 'content': budgeted_prompt}],
             tokenize=False,
             add_generation_prompt=True,
             enable_thinking=False,
         )
         raw_text, meta = self._generate_from_chat_text(chat_text)
+        meta.update(budget_meta)
         plan = self.normalize_plan(self.parse_json(raw_text))
         return plan, meta

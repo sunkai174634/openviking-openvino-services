@@ -82,3 +82,22 @@ def test_redact_limit_parameter():
     out = redact(long, limit=400)
     assert out.endswith('…') and len(out) <= 401
     assert redact('short') == 'short'
+
+
+def test_ring_buffer_level_filter_strict_match():
+    h = RingBufferLogHandler(64)
+    h.emit(_record('e1', level=logging.WARNING))
+    h.emit(_record('e2', level=logging.INFO))
+    h.emit(_record('e3', level=logging.ERROR))
+    assert [e['event'] for e in h.query(level='WARNING')] == ['e1']
+    assert [e['event'] for e in h.query(level='ERROR')] == ['e3']
+    assert len(h.query()) == 3
+
+
+def test_buffered_log_count_o1():
+    from app.logging_config import buffered_log_count, ensure_logging
+
+    ensure_logging()
+    before = buffered_log_count()
+    logging.getLogger('t.count').info('c1')
+    assert buffered_log_count() == before + 1

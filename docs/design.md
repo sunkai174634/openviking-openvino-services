@@ -58,6 +58,7 @@ embedding 侧在 tokenize 后重数一次 token（与 MAX_INPUT_TOKENS 比较）
 - **request_id 跨层传播**：contextvars 实现；FastAPI sync endpoint 的线程池会复制 context，engine 层日志自动带上同一 request_id（注意：裸 `threading.Thread` 不复制 contextvars——内部 infer worker 的日志不带请求 id，属预期）
 - **关键事件**：`embed_ok`（INFO，含 lane/token/infer/queue 耗时拆解）、`input_truncated` / `prompt_truncated` / `queue_timeout` / `queue_full`（WARNING）
 - 日志里只放 `input_preview`（redact 截断到 120 字符），不落完整 prompt
+- **输入预算全覆盖**（1.1.0 起）：`/v1/intent` 的 `plan()` 与 `complete_prompt()` 走同一条 `_truncate_prompt_preserving_edges` 预算路径（此前 plan() 未限长直送 iGPU，且 prompt_truncated 恒 False）
 - **结果可见性**（1.0.1 起）：`embed_ok.result_digest` = `{dim, norm, sha8}` 向量指纹（确定性：同输入必同指纹，用于验证可复现性，不往日志里灌 1024 维浮点）；`intent_ok.plan_preview` = 生成的查询计划 JSON 前 400 字符（redact）
 
 理由：截断不可见时，故障表现为"模型输出质量下降"，会误导去怀疑模型/量化，而真实原因只是预算不够。诊断规则：**JSON parse 失败且 generated_tokens == MAX_NEW_TOKENS → 先加输出预算**。

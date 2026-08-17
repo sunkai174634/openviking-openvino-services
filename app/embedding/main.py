@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from transformers import AutoTokenizer
 
 from logging_config import (
+    buffered_log_count,
     current_request_id,
     get_logger,
     install_request_logging,
@@ -236,10 +237,12 @@ class Embedder:
                 self.slow_lane.append(work)
             self.sched_cond.notify_all()
         deadline = time.perf_counter() + timeout
-        while not work.done:
-            remaining = deadline - time.perf_counter()
-            if remaining <= 0:
-                with self.sched_cond:
+        # Condition.wait instead of a 5ms sleep poll: wakes immediately when the
+        # worker finishes, and parks the thread between wakeups.
+        with self.sched_cond:
+            while not work.done:
+                remaining = deadline - time.perf_counter()
+                if remaining <= 0:
                     try:
                         self.fast_lane.remove(work)
                         return False
@@ -250,11 +253,11 @@ class Embedder:
                         return False
                     except ValueError:
                         pass
-                # worker already picked it up: wait for completion
-                while not work.done:
-                    time.sleep(0.005)
-                return True
-            time.sleep(0.005)
+                    # worker already picked it up: wait for completion
+                    while not work.done:
+                        self.sched_cond.wait()
+                    return True
+                self.sched_cond.wait(remaining)
         return True
 
     # ---- public API ----
@@ -283,8 +286,14 @@ class Embedder:
                 return_tensors='np',
             )
             tok_ms = (time.perf_counter() - t0) * 1000
-            # truncation visibility: tokenizer caps each sequence at MAX_INPUT_TOKENS
-            truncated = any(len(self.tokenizer.encode(t, add_special_tokens=False)) > MAX_INPUT_TOKENS for t in texts)
+            # truncation visibility: a row only MIGHT be truncated when it filled
+            # the whole budget; shorter rows skip the re-encode entirely.
+            seq_lens = enc['attention_mask'].sum(axis=1)
+            truncated = any(
+                int(sl) >= MAX_INPUT_TOKENS
+                and len(self.tokenizer.encode(t, add_special_tokens=False)) > MAX_INPUT_TOKENS
+                for t, sl in zip(texts, seq_lens)
+            )
             input_ids = enc['input_ids'].astype(np.int64)
             attention_mask = enc['attention_mask'].astype(np.int64)
             prompt_tokens = int(attention_mask.sum())
@@ -411,7 +420,7 @@ def models():
 def logs(limit: int = 200, level: str | None = None, event: str | None = None,
          request_id: str | None = None, q: str | None = None):
     """Structured log tail with filtering (newest first)."""
-    return {'service': 'embedding', 'version': __version__, 'total': len(recent_logs(limit=100000)), 'entries': recent_logs(limit=limit, level=level, event=event, request_id=request_id, q=q)}
+    return {'service': 'embedding', 'version': __version__, 'buffer_total': buffered_log_count(), 'entries': recent_logs(limit=limit, level=level, event=event, request_id=request_id, q=q)}
 
 
 @app.post('/v1/embeddings')

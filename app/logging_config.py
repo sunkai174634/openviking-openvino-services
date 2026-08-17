@@ -103,9 +103,8 @@ class RingBufferLogHandler(logging.Handler):
                 entry = json.loads(line)
             except ValueError:
                 continue
-            if level_no is not None and logging.getLevelName(entry.get('level', '')) != level_no:
-                if entry.get('level') != (level or '').upper():
-                    continue
+            if level_no is not None and entry.get('level') != (level or '').upper():
+                continue
             if event and entry.get('event') != event:
                 continue
             if request_id and entry.get('request_id') != request_id:
@@ -161,6 +160,13 @@ def recent_logs(limit=200, level=None, event=None, request_id=None, q=None) -> l
     if _ring_handler is None:
         return []
     return _ring_handler.query(limit=limit, level=level, event=event, request_id=request_id, q=q)
+
+
+def buffered_log_count() -> int:
+    """O(1) count of records currently in the ring buffer."""
+    if _ring_handler is None:
+        return 0
+    return len(_ring_handler._entries)
 
 
 def vec_digest(vec):

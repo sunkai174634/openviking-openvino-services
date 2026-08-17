@@ -142,7 +142,7 @@ function esc(s){const d=document.createElement('div');d.textContent=s==null?'':S
 function render(d){
   lastData=d;
   $('verBadge').textContent=(d.service||svc)+' v'+(d.version||'?');
-  $('cntBadge').textContent=d.total+' 条缓存 / 显示 '+d.entries.length;
+  $('cntBadge').textContent=d.buffer_total+' 条缓存 / 显示 '+d.entries.length;
   $('dot').classList.remove('off');
   for(const e of d.entries)if(e.event)events.add(e.event);
   const sel=$('fEvent'),cur=sel.value;
