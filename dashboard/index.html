@@ -101,11 +101,12 @@ async function fetchLogs(){
 }
 function fmtDetail(e){return fmtDetailParts(e).map(p=>p.text).join(' ')}
 const TH={
-  infer_ms:{warn:500,err:2000},      // 单次推理
-  request_ms:{warn:1000,err:5000},   // 整请求（intent 正常 5-12s，容忍）
-  generate_ms:{warn:8000,err:20000}, // intent 生成
-  queue_wait_ms:{warn:200,err:1000}, // 排队
+  infer_ms:{warn:500,err:2000},       // 单次推理（快车道基线 ~90-500ms）
+  request_ms:{warn:1000,err:5000},    // 整请求（仅 embedding 有此字段）
+  generate_ms:{warn:15000,err:30000}, // intent 生成：NAS 正常 ~9-13s（README 实测 12.34s）
+  queue_wait_ms:{warn:200,err:1000},  // 排队：与车道无关，超了就是异常
 };
+const SPEED_KEYS=new Set(['infer_ms','request_ms','generate_ms']);
 function fmtDetailParts(e){
   const skip=new Set(['ts','level','logger','event','request_id']);
   const parts=[];
@@ -128,7 +129,9 @@ function anomaly(e){
   if(e.level==='WARNING')return 'warn';
   if(e.input_truncated===true||e.prompt_truncated===true||e.output_truncated===true)return 'warn';
   if(e.queue_timeouts>0)return 'warn';
+  const slow=e.lane==='slow'||e.is_long_request===true; // 慢车道长文本按设计就是秒级，不算速度异常
   for(const[k,t]of Object.entries(TH)){
+    if(slow&&SPEED_KEYS.has(k)&&k!=='queue_wait_ms')continue;
     const v=e[k];
     if(typeof v==='number'&&v>=t.err)return 'err';
     if(typeof v==='number'&&v>=t.warn)return 'warn';
