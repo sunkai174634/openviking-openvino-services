@@ -6,10 +6,13 @@ from typing import List, Optional, Union
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from ..logging_config import current_request_id, get_logger, install_request_logging
 from .config import MODEL_ID
 from .engine import IntentEngine
 
+logger = get_logger('intent')
 app = FastAPI(title='OpenViking OpenVINO Intent Sidecar', version='0.3.0')
+install_request_logging(app, 'intent')
 engine = None
 started_at = time.time()
 
@@ -111,6 +114,18 @@ def intent(req: IntentRequest):
         raise HTTPException(status_code=502, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+    logger.info(
+        'intent_ok',
+        extra={
+            'request_id': current_request_id(),
+            'prompt_tokens': meta.get('prompt_tokens', 0),
+            'generated_tokens': meta.get('generated_tokens', 0),
+            'generate_ms': round(meta.get('generate_ms', 0), 1),
+            'prompt_truncated': bool(meta.get('prompt_truncated')),
+            'output_truncated': bool(meta.get('truncated')),
+            'queries': len(plan.get('queries', [])),
+        },
+    )
     return {'object': 'intent', 'model': MODEL_ID, 'plan': plan, 'meta': meta, 'truncated': bool(meta.get('truncated'))}
 
 

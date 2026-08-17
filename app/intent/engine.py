@@ -13,9 +13,10 @@ from jinja2 import Template
 from optimum.intel import OVModelForVisualCausalLM
 from transformers import AutoTokenizer
 
+from ..logging_config import current_request_id, get_logger
 from .config import MODEL_DIR, OPENVINO_DEVICE, MAX_INPUT_TOKENS, MAX_NEW_TOKENS, TEMPERATURE
 
-logger = logging.getLogger(__name__)
+logger = get_logger('intent.engine')
 
 def _load_prompt_path() -> Path:
     configured = os.environ.get('PROMPT_PATH')
@@ -122,12 +123,15 @@ class IntentEngine:
             'prompt_tail_tokens_kept': tail_keep,
         })
         logger.warning(
-            '[IntentEngine] Prompt truncated: before=%s after=%s budget=%s head=%s tail=%s',
-            before_tokens,
-            after_tokens,
-            self.prompt_budget_tokens,
-            head_keep,
-            tail_keep,
+            'prompt_truncated',
+            extra={
+                'request_id': current_request_id(),
+                'prompt_tokens_before': before_tokens,
+                'prompt_tokens_after': after_tokens,
+                'budget': self.prompt_budget_tokens,
+                'head_kept': head_keep,
+                'tail_kept': tail_keep,
+            },
         )
         return truncated, meta
 

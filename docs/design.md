@@ -45,7 +45,19 @@ tokenize 移到入队前是同一次修复的一半：旧设计 tokenize 在锁�
 截断+JSON 破  → 502 detail: "output truncated at N tokens (MAX_NEW_TOKENS=512); JSON incomplete"
 /v1/intent   → 顶层 truncated: true/false
 快速人查      → usage.completion_tokens == MAX_NEW_TOKENS 即顶格
+embedding    → meta.input_truncated: true/false + WARNING 级 input_truncated 日志事件
 ```
+
+embedding 侧在 tokenize 后重数一次 token（与 MAX_INPUT_TOKENS 比较），截断既进响应 meta 也进结构化日志——这是对 0.2.0-lanes 时代"静默右截断"盲点的补齐。
+
+## 5b. 结构化日志（2026-08-17 起）
+
+`app/logging_config.py` 提供共享 JSON 日志层（每行一个 JSON 对象，`LOG_FORMAT=text` 切人类可读）：
+
+- **请求访问日志**：中间件记录 method / **真实 path（非路由模板）** / status / duration_ms，并生成或透传 `X-Request-ID`（响应头回显）。uvicorn access log 被显式降级避免重复
+- **request_id 跨层传播**：contextvars 实现；FastAPI sync endpoint 的线程池会复制 context，engine 层日志自动带上同一 request_id（注意：裸 `threading.Thread` 不复制 contextvars——内部 infer worker 的日志不带请求 id，属预期）
+- **关键事件**：`embed_ok`（INFO，含 lane/token/infer/queue 耗时拆解）、`input_truncated` / `prompt_truncated` / `queue_timeout` / `queue_full`（WARNING）
+- 日志里只放 `input_preview`（redact 截断到 120 字符），不落完整 prompt
 
 理由：截断不可见时，故障表现为"模型输出质量下降"，会误导去怀疑模型/量化，而真实原因只是预算不够。诊断规则：**JSON parse 失败且 generated_tokens == MAX_NEW_TOKENS → 先加输出预算**。
 

@@ -9,6 +9,7 @@ import openvino as ov
 from fastapi import FastAPI, HTTPException
 from transformers import AutoTokenizer
 
+from ..logging_config import current_request_id, get_logger, install_request_logging, redact
 from .config import (
     MODEL_ID,
     MODEL_DIR,
@@ -22,7 +23,9 @@ from .config import (
     LONG_QUEUE_TIMEOUT_SECONDS,
 )
 
+logger = get_logger('embedding')
 app = FastAPI(title='OpenViking OpenVINO Embedding Sidecar', version='0.2.0')
+install_request_logging(app, 'embedding')
 engine = None
 started_at = time.time()
 
@@ -253,12 +256,14 @@ class Embedder:
             with self.stats_lock:
                 self.rejected_requests += 1
                 self.last_error = msg
+            logger.warning('queue_full', extra={'max_queue_size': MAX_QUEUE_SIZE})
             raise EmbeddingOverloadedError(msg)
         self._begin_request()
         try:
             if not texts:
                 raise ValueError('input must not be empty')
             # tokenize outside scheduler -> token count known before lane choice
+            raw_tokens = sum(len(t) for t in texts)
             t0 = time.perf_counter()
             enc = self.tokenizer(
                 texts,
@@ -268,6 +273,8 @@ class Embedder:
                 return_tensors='np',
             )
             tok_ms = (time.perf_counter() - t0) * 1000
+            # truncation visibility: tokenizer caps each sequence at MAX_INPUT_TOKENS
+            truncated = any(len(self.tokenizer.encode(t, add_special_tokens=False)) > MAX_INPUT_TOKENS for t in texts)
             input_ids = enc['input_ids'].astype(np.int64)
             attention_mask = enc['attention_mask'].astype(np.int64)
             prompt_tokens = int(attention_mask.sum())
@@ -295,6 +302,10 @@ class Embedder:
             if not completed:
                 with self.stats_lock:
                     self.queue_timeouts += 1
+                logger.warning(
+                    'queue_timeout',
+                    extra={'lane': lane, 'timeout_s': timeout, 'prompt_tokens': prompt_tokens, 'batch_size': len(texts)},
+                )
                 raise EmbeddingQueueTimeoutError(f'{lane} lane wait timed out after {timeout}s')
             if work.error is not None:
                 raise work.error
@@ -306,8 +317,10 @@ class Embedder:
             request_ms = (time.perf_counter() - request_start) * 1000
             timeout_warning = request_ms > REQUEST_TIMEOUT_SECONDS * 1000
             warning = None
+            if truncated:
+                warning = f'input truncated: prompt_tokens={prompt_tokens} > MAX_INPUT_TOKENS={MAX_INPUT_TOKENS}'
             if is_long:
-                warning = f'long request: prompt_tokens={prompt_tokens} > {LONG_REQUEST_TOKENS}'
+                warning = (warning + '; ' if warning else '') + f'long request: prompt_tokens={prompt_tokens} > {LONG_REQUEST_TOKENS}'
             if timeout_warning:
                 warning = (warning + '; ' if warning else '') + f'request exceeded timeout budget: {request_ms:.1f}ms'
             meta = {
@@ -318,10 +331,28 @@ class Embedder:
                 'prompt_tokens': prompt_tokens,
                 'batch_size': len(texts),
                 'is_long_request': is_long,
+                'input_truncated': truncated,
                 'lane': lane,
                 'request_timeout_warning': timeout_warning,
                 'warning': warning,
             }
+            log_extra = {
+                'request_id': current_request_id(),
+                'lane': lane,
+                'prompt_tokens': prompt_tokens,
+                'batch_size': len(texts),
+                'queue_wait_ms': round(queue_wait_ms, 1),
+                'tokenize_ms': round(tok_ms, 1),
+                'infer_ms': round(work.infer_ms, 1),
+                'request_ms': round(request_ms, 1),
+                'input_truncated': truncated,
+                'input_chars': raw_tokens,
+                'input_preview': redact(texts[0]),
+            }
+            if truncated:
+                logger.warning('input_truncated', extra=log_extra)
+            else:
+                logger.info('embed_ok', extra=log_extra)
             self._finish_request()
             return emb, meta
         except Exception as exc:
