@@ -87,12 +87,13 @@ tr.row-err:hover td{background:rgba(224,108,108,.18)}
 <div class="toolbar" id="toolbarLog">
   <select id="fLevel">
     <option value="">全部级别</option>
-    <option>INFO</option><option>WARNING</option><option>ERROR</option>
+    <option value="INFO">信息</option><option value="WARNING">警告</option><option value="ERROR">错误</option>
   </select>
   <select id="fEvent"><option value="">全部事件</option></select>
   <input id="fRid" class="q" style="max-width:220px" placeholder="Request ID（点日志里的黄字可填入）">
   <input id="fQ" class="q" placeholder="关键词：路径 / 耗时 / truncated / 任意字段…">
   <label class="auto" title="只显示高耗时/截断/超时警告/告警/错误的行"><input type="checkbox" id="onlyAnom">只看异常</label>
+  <label class="auto" title="隐藏 http_request 记录（默认开启，减少噪音）"><input type="checkbox" id="hideHttp" checked>隐藏 HTTP 请求</label>
   <label class="auto"><input type="checkbox" id="autoRefresh" checked>自动刷新 5s</label>
   <button id="btnClear" onclick="filtersReset()" style="background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:6px;padding:6px 12px;cursor:pointer">重置</button>
 </div>
@@ -149,12 +150,40 @@ const TH={
   queue_wait_ms:{warn:200,err:1000},
 };
 const SPEED_KEYS=new Set(['infer_ms','request_ms','generate_ms']);
+/* 事件中文映射 */
+const EVENT_ZH={
+  embed_ok:'嵌入成功',http_request:'HTTP 请求',infer_worker_started:'推理线程启动',
+  infer_worker_error:'推理线程错误',queue_full:'队列已满',queue_timeout:'排队超时',
+  infer_failed:'推理失败',input_truncated:'输入截断',intent_ok:'意图分析成功',
+  prompt_truncated:'提示词截断',embedding_ok:'嵌入成功',startup:'启动',
+};
+function evtZh(ev){return EVENT_ZH[ev]||ev}
+/* 字段中文映射 + 折叠规则：
+   show=false 的字段不进详情行，只在 title 悬停里给 */
+const FIELD_ZH={
+  infer_ms:'推理耗时',request_ms:'请求耗时',generate_ms:'生成耗时',tokenize_ms:'分词耗时',
+  queue_wait_ms:'排队等待',duration_ms:'耗时',prompt_tokens:'输入token',batch_size:'批大小',
+  input_chars:'输入字符',lane:'车道',status:'状态',method:'方法',path:'路径',
+  max_queue_size:'队列上限',timeout_s:'超时秒',queue_timeouts:'排队超时数',
+  input_truncated:'输入截断',prompt_truncated:'提示词截断',output_truncated:'输出截断',
+  result_digest:'结果指纹',error:'错误',reason:'原因',type:'类型',
+};
+const FIELD_HIDE=new Set(['input_preview','result_digest','digest','meta','details','context']);
+const FIELD_MINOR=new Set(['input_chars','tokenize_ms','batch_size','max_queue_size','timeout_s','method','path','status','type','reason']);
+const LANE_ZH={fast:'快道',slow:'慢道',normal:'普通'};
+function fieldZh(k,v){
+  if(k==='lane')return (LANE_ZH[v]||v);
+  return FIELD_ZH[k]||k;
+}
 function fmtDetailParts(e){
   const skip=new Set(['ts','level','logger','event','request_id']);
   const parts=[];
+  const extraTitle=[];
   for(const[k,v]of Object.entries(e)){
     if(skip.has(k))continue;
-    if(k==='exc'){parts.push({text:'exc='+String(v).split('\n').slice(0,2).join(' ⏎ '),cls:'hl-err'});continue}
+    if(k==='exc'){parts.push({text:'异常='+String(v).split('\n').slice(0,2).join(' ⏎ '),cls:'hl-err'});continue}
+    if(FIELD_HIDE.has(k)){extraTitle.push(fieldZh(k,v)+'='+(typeof v==='object'?JSON.stringify(v).slice(0,120):v));continue}
+    if(typeof v==='object'||v===null||v===''){extraTitle.push(fieldZh(k,v)+'='+(typeof v==='object'?JSON.stringify(v).slice(0,120):v));continue}
     let cls='';
     const t=TH[k];
     if(t&&typeof v==='number'){
@@ -162,8 +191,10 @@ function fmtDetailParts(e){
     }
     if((k.endsWith('_truncated')||k==='input_truncated')&&v===true)cls='hl-warn';
     if(k==='queue_timeouts'&&v>0)cls='hl-warn';
-    parts.push({text:k+'='+(typeof v==='object'?JSON.stringify(v):v),cls});
+    if(FIELD_MINOR.has(k)){extraTitle.push(fieldZh(k,v)+'='+v);continue}
+    parts.push({text:fieldZh(k,v)+'='+(typeof v==='object'?JSON.stringify(v):v),cls});
   }
+  if(extraTitle.length)parts.push({text:'⋯',cls:'hl-dim',title:extraTitle.join(' · ')});
   return parts;
 }
 function anomaly(e){
@@ -181,6 +212,8 @@ function anomaly(e){
   return '';
 }
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML}
+const LEVEL_ZH={INFO:'信息',WARNING:'警告',ERROR:'错误',DEBUG:'调试'};
+function lvZh(l){return LEVEL_ZH[l]||l}
 function render(d){
   lastData=d;
   $('verBadge').textContent=(d.service||svc)+' v'+(d.version||'?');
@@ -188,22 +221,23 @@ function render(d){
   $('dot').classList.remove('off');
   for(const e of d.entries)if(e.event)events.add(e.event);
   const sel=$('fEvent'),cur=sel.value;
-  sel.innerHTML='<option value="">全部事件</option>'+[...events].sort().map(x=>`<option${x===cur?' selected':''}>${esc(x)}</option>`).join('');
+  sel.innerHTML='<option value="">全部事件</option>'+[...events].sort().map(x=>`<option value="${esc(x)}"${x===cur?' selected':''}>${esc(evtZh(x))}</option>`).join('');
   const tb=$('rows');
   let entries=d.entries;
+  if($('hideHttp').checked)entries=entries.filter(e=>e.event!=='http_request');
   if($('onlyAnom').checked)entries=entries.filter(e=>anomaly(e));
   tb.innerHTML=entries.map(e=>{
     const a=anomaly(e);
     return `<tr${a?` class="row-${a}"`:''}>
     <td class="ts">${esc((e.ts||'').replace('T',' ').slice(0,23))}</td>
-    <td class="lv ${esc(e.level)}">${esc(e.level)}</td>
+    <td class="lv ${esc(e.level)}" title="${esc(e.level)}">${esc(lvZh(e.level))}</td>
     <td class="svc"><span class="${SERVICES[svc].cls}">●</span> ${SERVICES[svc].name}</td>
-    <td class="evt">${esc(e.event)}</td>
+    <td class="evt" title="${esc(e.event)}">${esc(evtZh(e.event))}</td>
     <td class="rid" title="点击筛选此请求" onclick="byRid('${esc(e.request_id)}')">${esc(e.request_id||'')}</td>
-    <td class="detail">${fmtDetailParts(e).map(p=>p.cls?`<span class="${p.cls}">${esc(p.text)}</span>`:esc(p.text)).join(' ')}</td>
+    <td class="detail">${fmtDetailParts(e).map(p=>p.title?`<span class="${p.cls||''}" title="${esc(p.title)}">${esc(p.text)}</span>`:p.cls?`<span class="${p.cls}">${esc(p.text)}</span>`:esc(p.text)).join(' ')}</td>
   </tr>`}).join('');
   $('empty').hidden=entries.length>0;
-  $('foot').textContent='更新于 '+new Date().toLocaleTimeString('zh-CN')+' · 端点 '+SERVICES[svc].url+'/v1/logs'+($('onlyAnom').checked?' · 只看异常 '+entries.length+' 条':'');
+  $('foot').textContent='更新于 '+new Date().toLocaleTimeString('zh-CN')+' · 端点 '+SERVICES[svc].url+'/v1/logs'+($('hideHttp').checked?' · 已隐藏 HTTP 请求':'')+($('onlyAnom').checked?' · 只看异常 '+entries.length+' 条':'');
 }
 async function refresh(){
   try{render(await fetchLogs())}catch(err){
@@ -289,6 +323,7 @@ document.getElementById('tabs').addEventListener('click',e=>{
 });
 ['fLevel','fEvent'].forEach(i=>$(i).addEventListener('change',refresh));
 $('onlyAnom').addEventListener('change',refresh);
+$('hideHttp').addEventListener('change',refresh);
 $('onlyFailed').addEventListener('change',refreshTasks);
 $('taskRefresh').addEventListener('change',()=>{});
 ['fRid','fQ'].forEach(i=>$(i).addEventListener('input',()=>{clearTimeout(i._t);i._t=setTimeout(refresh,400)}));
